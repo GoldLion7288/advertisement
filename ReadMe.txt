@@ -5,6 +5,9 @@ git clone https://github.com/GoldLion7288/advertisement.git
 cd advertisement
 chmod +x run.py run.sh setup.sh realrun.sh 
 
+ライブラリをインストールしてください。
+./setup.sh
+
 # 始める
 ./realrun.sh
 
