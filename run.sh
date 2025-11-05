@@ -148,8 +148,8 @@ case "$COMMAND" in
         echo "Starting Video Player GUI with background: $BACKGROUND_IMAGE"
 
         # --single-instance flag will auto-restart if already running
-        # Run in background
-        $PYTHON_CMD "$MAIN_SCRIPT" --start "$BACKGROUND_IMAGE" --single-instance > /dev/null 2>&1 &
+        # Run in background (temporarily logging to /tmp for debugging)
+        $PYTHON_CMD "$MAIN_SCRIPT" --start "$BACKGROUND_IMAGE" --single-instance > /tmp/video_player_stdout.log 2> /tmp/video_player_stderr.log &
         GUI_PID=$!
 
         # Actively wait for IPC readiness instead of a fixed sleep
