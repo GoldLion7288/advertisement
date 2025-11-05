@@ -25,7 +25,7 @@ echo "   → Installing PyQt5 system packages..."
 sudo apt install -y python3-pyqt5 pyqt5-dev-tools
 
 echo "   → Installing OpenCV system dependencies..."
-sudo apt install -y libgl1-mesa-glx libglib2.0-0 \
+sudo apt install -y libgl1 libglib2.0-0t64 \
                     libavcodec-extra libavformat-dev libswscale-dev
 
 echo "   → Installing FFmpeg libraries for audio-video sync..."
