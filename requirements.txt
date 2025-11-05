@@ -4,9 +4,9 @@
 # GUI Framework - Qt5 for professional GUI with hardware acceleration
 PyQt5>=5.15.9
 
-# Computer Vision - Full OpenCV with GUI support (NOT headless)
-# Note: Use opencv-python (not opencv-python-headless) for video display
-opencv-python>=4.8.0
+# Computer Vision - Headless OpenCV to avoid Qt plugin conflicts with PyQt5
+# Note: Use opencv-python-headless to prevent Qt conflicts when using PyQt5
+opencv-python-headless>=4.8.0
 
 # Image Processing - High-quality image manipulation
 Pillow>=10.0.0
