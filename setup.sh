@@ -9,6 +9,13 @@ sudo apt install -y python3 python3-pip python3-venv
 
 echo ""
 echo "🐍 Step 3: Creating virtual environment..."
+# Ensure current directory is writable by the current user
+sudo chown -R $USER:$USER "$(pwd)"
+
+# Remove any existing venv to avoid permission conflicts
+rm -rf venv
+
+# Create virtual environment with system site packages
 python3 -m venv --system-site-packages venv
 echo "✓ Virtual environment created at ./venv"
 echo ""
