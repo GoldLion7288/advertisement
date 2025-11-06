@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Function to check if a package exists in the repository
+package_exists() {
+    apt-cache show "$1" &>/dev/null
+}
+
+# Function to get the correct package name (tries t64 first, falls back to non-t64)
+get_package_name() {
+    local base_name="$1"
+    if package_exists "${base_name}t64"; then
+        echo "${base_name}t64"
+    elif package_exists "${base_name}"; then
+        echo "${base_name}"
+    else
+        echo "${base_name}"  # Return original if neither exists
+    fi
+}
+
 echo "🔧 Step 1: Update system packages..."
 sudo apt update
 
@@ -25,7 +42,10 @@ echo "   → Installing PyQt5 system packages..."
 sudo apt install -y python3-pyqt5 pyqt5-dev-tools
 
 echo "   → Installing OpenCV system dependencies..."
-sudo apt install -y libgl1 libglib2.0-0t64 \
+# Auto-detect correct package name for this distribution
+GLIB_PKG=$(get_package_name "libglib2.0-0")
+echo "      (Using $GLIB_PKG for this system)"
+sudo apt install -y libgl1 "$GLIB_PKG" \
                     libavcodec-extra libavformat-dev libswscale-dev
 
 echo "   → Installing FFmpeg libraries for audio-video sync..."
