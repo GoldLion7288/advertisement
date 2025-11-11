@@ -8,9 +8,8 @@ import argparse
 from pathlib import Path
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QGraphicsOpacityEffect
 from PyQt5.QtCore import QTimer, Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSocketNotifier
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QImageReader
 import cv2
-from PIL import Image
 import numpy as np
 from ffpyplayer.player import MediaPlayer
 import time
@@ -51,6 +50,7 @@ class VideoThread(QThread):
             # Performance tracking for smooth playback
             last_pts = 0
             audio_pts = 0
+            behind_streak = 0
 
             print(f"Starting smooth playback: {self.video_path}")
 
@@ -91,10 +91,11 @@ class VideoThread(QThread):
                 try:
                     width, height = img.get_size()
                     buf = img.to_bytearray()[0]
-                    frame_rgb = np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3)
+                    # Make a safe copy for UI thread consumption
+                    frame_rgb = np.frombuffer(buf, dtype=np.uint8).reshape(height, width, 3).copy()
 
-                    # Emit frame for display
-                    last_frame = frame_rgb.copy()
+                    # Emit frame for display (avoid second copy here)
+                    last_frame = frame_rgb
                     self.frame_ready.emit(frame_rgb)
                     frame_count += 1
 
@@ -106,14 +107,18 @@ class VideoThread(QThread):
                 if audio_pts > 0 and pts > 0:
                     delay = pts - audio_pts
 
-                    # Smooth sync adjustment
+                    # Smooth sync adjustment with adaptive drop
                     if delay > 0.001:  # Video ahead of audio
-                        # Sleep to sync with audio
-                        sleep_time = min(delay, 0.1)  # Cap at 100ms
+                        sleep_time = min(delay, 0.05)  # Cap at 50ms to reduce jitter
                         time.sleep(sleep_time)
-                    elif delay < -0.05:  # Video behind audio (>50ms)
-                        # Skip this frame to catch up (frame dropping)
-                        continue
+                        behind_streak = 0
+                    elif delay < -0.02:  # Video behind audio (>20ms)
+                        behind_streak += 1
+                        if behind_streak >= 2:
+                            # Skip this frame to catch up
+                            continue
+                    else:
+                        behind_streak = 0
                 else:
                     # No audio sync available, minimal sleep
                     time.sleep(0.001)
@@ -289,12 +294,12 @@ class AdPlayerWindow(QMainWindow):
     def display_image(self, image_path, duration, is_background=False):
         """Display image with smart full-screen sizing"""
         try:
-            # Load image with Pillow for better quality
-            pil_image = Image.open(image_path)
-
-            # Convert to RGB if needed
-            if pil_image.mode != 'RGB':
-                pil_image = pil_image.convert('RGB')
+            reader = QImageReader(image_path)
+            reader.setAutoTransform(True)
+            q_image = reader.read()
+            if q_image.isNull():
+                print(f"Error displaying image {image_path}: failed to load")
+                return
 
             # Get screen size - use actual screen geometry
             from PyQt5.QtWidgets import QApplication
@@ -309,43 +314,17 @@ class AdPlayerWindow(QMainWindow):
                 screen_width = screen_size.width()
                 screen_height = screen_size.height()
 
-            # Calculate optimal scaling to fit full screen
-            img_width, img_height = pil_image.size
-
             if is_background:
-                # Background: fill entire screen (may crop to maintain aspect ratio)
-                scale = max(screen_width / img_width, screen_height / img_height)
+                # Fill screen while preserving aspect, then center-crop
+                scaled = q_image.scaled(screen_width, screen_height, Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
+                x = max(0, (scaled.width() - screen_width) // 2)
+                y = max(0, (scaled.height() - screen_height) // 2)
+                q_image = scaled.copy(x, y, screen_width, screen_height)
             else:
-                # Regular media: fit entire image (may have black bars)
-                scale = min(screen_width / img_width, screen_height / img_height)
+                # Fit inside the screen with aspect preserved
+                q_image = q_image.scaled(screen_width, screen_height, Qt.KeepAspectRatio, Qt.FastTransformation)
 
-            new_width = int(img_width * scale)
-            new_height = int(img_height * scale)
-
-            print(f"Image size adjusted: {img_width}x{img_height} → {new_width}x{new_height} (screen: {screen_width}x{screen_height}, bg={is_background})")
-
-            # Resize with high quality (LANCZOS)
-            pil_image = pil_image.resize((new_width, new_height), Image.LANCZOS)
-
-            # Center crop if background and image is larger than screen
-            if is_background and (new_width > screen_width or new_height > screen_height):
-                left = (new_width - screen_width) // 2
-                top = (new_height - screen_height) // 2
-                right = left + screen_width
-                bottom = top + screen_height
-                pil_image = pil_image.crop((left, top, right, bottom))
-                print(f"Background cropped to: {screen_width}x{screen_height}")
-
-            # Convert to QPixmap with high quality
-            img_array = np.array(pil_image)
-            height, width, channel = img_array.shape
-            bytes_per_line = 3 * width
-
-            q_image = QImage(img_array.data, width, height, bytes_per_line, QImage.Format_RGB888)
-
-            # Create pixmap
             pixmap = QPixmap.fromImage(q_image)
-
             self.label.setPixmap(pixmap)
 
             # Set timer if duration specified
@@ -373,6 +352,10 @@ class AdPlayerWindow(QMainWindow):
             self.video_thread = VideoThread(video_path, duration)
             self.video_thread.frame_ready.connect(self.update_frame)
             self.video_thread.playback_finished.connect(self.on_video_finished)
+            try:
+                self.video_thread.setPriority(QThread.HighPriority)
+            except Exception:
+                pass
             self.video_thread.start()
 
         except Exception as e:
@@ -412,20 +395,11 @@ class AdPlayerWindow(QMainWindow):
             else:
                 new_width, new_height = self._cached_display_size
 
-            # Fast bilinear interpolation for smoother real-time playback
-            # INTER_LINEAR is faster than LANCZOS4 and still provides good quality
-            frame_resized = cv2.resize(frame, (new_width, new_height),
-                                      interpolation=cv2.INTER_LINEAR)
-
-            # Direct conversion to QImage without intermediate steps
-            bytes_per_line = 3 * new_width
-            q_image = QImage(frame_resized.data, new_width, new_height,
-                           bytes_per_line, QImage.Format_RGB888)
-
-            # Fast pixmap conversion
-            pixmap = QPixmap.fromImage(q_image)
-
-            # Update display
+            # Direct conversion to QImage without OpenCV resize; scale via Qt
+            bytes_per_line_src = 3 * width
+            q_image_src = QImage(frame.data, width, height, bytes_per_line_src, QImage.Format_RGB888)
+            q_image_scaled = q_image_src.scaled(new_width, new_height, Qt.KeepAspectRatio, Qt.FastTransformation)
+            pixmap = QPixmap.fromImage(q_image_scaled)
             self.label.setPixmap(pixmap)
 
         except Exception as e:
