@@ -23,7 +23,7 @@ import argparse
 from pathlib import Path
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QGraphicsOpacityEffect
 from PyQt5.QtCore import QTimer, Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, QSocketNotifier
-from PyQt5.QtGui import QPixmap, QImage, QImageReader
+from PyQt5.QtGui import QPixmap, QImage, QImageReader, QColorSpace
 import cv2
 import numpy as np
 from ffpyplayer.player import MediaPlayer
@@ -70,12 +70,14 @@ class VideoThread(QThread):
                 'thread_type': 'frame',  # Frame-level threading for better performance
                 # High-quality output settings
                 'flags': 'low_delay',  # Low latency decoding
-                'flags2': 'fast',  # Fast decoding mode
+                # NOTE: Removed 'flags2': 'fast' to avoid lower-quality decode shortcuts
                 # Frame dropping prevention
                 'framedrop': False,  # Don't drop frames for quality
                 # Buffering optimizations
                 'analyzeduration': '1000000',  # 1 second analysis (faster startup)
                 'probesize': '5000000',  # 5MB probe size (balanced)
+                # High-quality scaling for RGB conversion (libswscale)
+                'sws_flags': 'lanczos+accurate_rnd+full_chroma_int',  # Best chroma and scaling quality
             }
 
             self.player = MediaPlayer(self.video_path, ff_opts=ff_opts)
@@ -345,6 +347,12 @@ class AdPlayerWindow(QMainWindow):
                 print(f"Error displaying image {image_path}: failed to load")
                 return
 
+            # Set sRGB color space for proper color reproduction
+            try:
+                q_image.setColorSpace(QColorSpace.SRgb)
+            except Exception:
+                pass  # Gracefully handle older Qt versions
+
             # Get screen size - use actual screen geometry
             from PyQt5.QtWidgets import QApplication
             screen = QApplication.primaryScreen()
@@ -434,8 +442,8 @@ class AdPlayerWindow(QMainWindow):
                 # Cache dimensions and scaling mode for this video resolution
                 self._cached_video_size = cache_key
                 self._cached_display_size = (new_width, new_height)
-                # Use SmoothTransformation for high-quality upscaling, FastTransformation for downscaling
-                self._cached_transform_mode = Qt.SmoothTransformation if scale > 1.0 else Qt.FastTransformation
+                # ALWAYS use SmoothTransformation for maximum quality (removes downscaling artifacts)
+                self._cached_transform_mode = Qt.SmoothTransformation
 
                 print(f"Video size adjusted: {width}x{height} → {new_width}x{new_height} (screen: {screen_width}x{screen_height}, scale: {scale:.2f})")
             else:
@@ -445,6 +453,12 @@ class AdPlayerWindow(QMainWindow):
             bytes_per_line_src = 3 * width
             # Use the frame data buffer directly without intermediate copies
             q_image_src = QImage(frame.data, width, height, bytes_per_line_src, QImage.Format_RGB888)
+
+            # Set sRGB color space for proper color reproduction (avoids washed-out colors)
+            try:
+                q_image_src.setColorSpace(QColorSpace.SRgb)
+            except Exception:
+                pass  # Gracefully handle older Qt versions without full color space support
 
             # High-quality scaling using cached transformation mode
             transform_mode = getattr(self, '_cached_transform_mode', Qt.SmoothTransformation)
@@ -662,6 +676,11 @@ def main():
         if args.single_instance and is_instance_running():
             print("Existing instance found. Restarting...")
             kill_existing_instance()
+
+        # Enable HiDPI scaling for high-resolution displays
+        # Must be set BEFORE creating QApplication
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
         # Start new GUI instance
         app = QApplication(sys.argv)
