@@ -698,12 +698,12 @@ def main():
             if send_ipc_command(command):
                 print(f"Play command sent: {filepath}")
 
-                # Wait for exact playback duration + minimal transition buffer
-                # Duration (actual playback) + fade transitions (300ms) + safety margin (100ms)
-                wait_time = duration + 0.00001
-                print(f"Waiting {wait_time}s for playback to complete...")
+                # Give the GUI enough time to finish playback and its fade transitions
+                transition_buffer = 0.45  # 150 ms fade-in + 150 ms fade-out + audio spin-up cushion
+                wait_time = max(duration, 1) + transition_buffer
+                print(f"Waiting {wait_time:.2f}s for playback to complete...")
                 time.sleep(wait_time)
-                print(f"Playback completed")
+                print("Playback completed")
             else:
                 print("Failed to send play command")
         else:
