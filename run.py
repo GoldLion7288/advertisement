@@ -270,6 +270,7 @@ class AdPlayerWindow(QMainWindow):
         self.video_thread = None
         self.is_transitioning = False
         self.pending_command = None
+        self.is_playing_media = False  # Track if actively playing media
 
         # Setup window with optimized rendering for smooth playback
         self.setWindowTitle('HD Video Player - H.264 Optimized')
@@ -332,6 +333,10 @@ class AdPlayerWindow(QMainWindow):
                 self.play_media(filepath, duration)
 
         elif cmd_type == 'STOP':
+            # Ignore STOP commands during active media playback
+            if self.is_playing_media:
+                print("Ignoring STOP command - media is actively playing")
+                return
             self.stop_playback(return_to_background=True)
 
         elif cmd_type == 'EXIT':
@@ -382,6 +387,8 @@ class AdPlayerWindow(QMainWindow):
             # Set timer if duration specified
             if duration > 0:
                 self.media_timer.start(int(duration * 1000))
+                if not is_background:
+                    self.is_playing_media = True  # Mark as actively playing
 
         except Exception as e:
             print(f"Error displaying image {image_path}: {e}")
@@ -408,6 +415,7 @@ class AdPlayerWindow(QMainWindow):
                 self.video_thread.setPriority(QThread.HighPriority)
             except Exception:
                 pass
+            self.is_playing_media = True  # Mark as actively playing
             self.video_thread.start()
 
         except Exception as e:
@@ -505,6 +513,9 @@ class AdPlayerWindow(QMainWindow):
         """Stop current playback and optionally return to background"""
         print("Stopping playback...")
 
+        # Clear playing flag
+        self.is_playing_media = False
+
         # Stop timers
         self.media_timer.stop()
 
@@ -523,14 +534,19 @@ class AdPlayerWindow(QMainWindow):
         # Don't return to background automatically
         # Just stop the timer and wait for next command
         self.media_timer.stop()
+        self.is_playing_media = False  # Media playback finished
+        print("Media duration completed")
 
     def on_video_finished(self, last_frame):
         """Called when video playback finishes - hold last frame cleanly"""
         # Don't return to background automatically
         # Display the last frame as a static image to prevent freezing
+        self.is_playing_media = False  # Media playback finished
         if last_frame is not None and last_frame.size > 0:
             self.update_frame(last_frame)
             print("Video finished - holding last frame")
+        else:
+            print("Video finished - no frames captured")
 
     def fade_in(self):
         """Fade in current content"""
