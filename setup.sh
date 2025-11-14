@@ -62,6 +62,19 @@ echo "   → Installing Qt5 core libraries..."
 sudo apt install -y libqt5gui5 libqt5core5a libqt5widgets5 libqt5opengl5 \
                     libqt5x11extras5 libqt5dbus5 libqt5network5
 
+echo "   → Installing Qt5 Multimedia for video playback..."
+sudo apt install -y libqt5multimedia5 libqt5multimedia5-plugins python3-pyqt5.qtmultimedia \
+                    qtmultimedia5-dev
+
+echo "   → Installing GStreamer multimedia framework..."
+sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+                    gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-alsa \
+                    gstreamer1.0-pulseaudio gstreamer1.0-x libgstreamer1.0-0 \
+                    libgstreamer-plugins-base1.0-0
+
+echo "   → Installing additional video codec libraries..."
+sudo apt install -y libx264-dev libx265-dev libvpx-dev libopus-dev
+
 echo ""
 echo "⚡ Step 5: Setting up Python environment..."
 source venv/bin/activate
